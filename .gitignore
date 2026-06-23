@@ -1,0 +1,13 @@
+# Credenciais e segredos — NUNCA versionar
+secrets.toml
+.streamlit/secrets.toml
+*.json
+
+# Dados de candidatos e anexos
+respostas_cassia.xlsx
+anexos/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
