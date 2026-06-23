@@ -1,4 +1,4 @@
-# Credenciais e segredos — NUNCA versionar
+# Credenciais e segredos — 
 secrets.toml
 .streamlit/secrets.toml
 *.json
