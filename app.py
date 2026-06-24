@@ -750,5 +750,5 @@ if st.button("Enviar inscrição"):
                     st.session_state.enviado = True
                     st.rerun()
 
-st.markdown('<div class="G3ST40-rodape"> G3ST4O · Prefeitura de Cássia - MG</div>',
+st.markdown('<div class="ig2p-rodape"> · G3ST4O · Prefeitura de Cássia - MG</div>',
             unsafe_allow_html=True)
