@@ -21,7 +21,7 @@ import streamlit as st
 
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
 PLANILHA_LOCAL = os.path.join(APP_DIR, "respostas_cassia.xlsx")
-BANDEIRA_PATH = os.path.join(APP_DIR, "Cassiamgbandeira.png")
+BANDEIRA_PATH = os.path.join(APP_DIR, "cássiabandeira.png")
 
 # ----------------------------------------------------------------------------
 # JANELA DE INSCRIÇÕES  ——  edite apenas estas duas datas para abrir/fechar.
@@ -385,8 +385,8 @@ def enviar_email_confirmacao(destinatario, nome, protocolo):
 # Anexos — Google Drive (prioridade) ou pasta local (fallback)
 # ----------------------------------------------------------------------------
 def _drive_service():
-    from google.oauth2.service_account import Credentials
-    from googleapiclient.discovery import build
+    from google.oauth2.service_account import Credentials  # type: ignore
+    from googleapiclient.discovery import build  # type: ignore
     escopos = ["https://www.googleapis.com/auth/drive"]
     cred = Credentials.from_service_account_info(
         dict(st.secrets["gcp_service_account"]), scopes=escopos)
@@ -394,7 +394,7 @@ def _drive_service():
 
 
 def upload_arquivo_drive(uploaded, nome_final, folder_id):
-    from googleapiclient.http import MediaIoBaseUpload
+    from googleapiclient.http import MediaIoBaseUpload  # type: ignore
     service = _drive_service()
     media = MediaIoBaseUpload(
         io.BytesIO(uploaded.getvalue()),
@@ -452,8 +452,8 @@ def conectar_sheets():
     if not sheet_id or "COLE_AQUI" in sheet_id:
         return None, "sheet_id não configurado em [planilha] no secrets.toml."
     try:
-        import gspread
-        from google.oauth2.service_account import Credentials
+        import gspread  # type: ignore
+        from google.oauth2.service_account import Credentials  # type: ignore
     except ImportError:
         return None, ("Bibliotecas gspread/google-auth NÃO instaladas. "
                       "Rode: py -m pip install gspread google-auth")
@@ -561,7 +561,7 @@ if st.session_state.enviado:
         for k in ("enviado", "protocolo", "anexos_local"):
             st.session_state[k] = False if k == "enviado" or k == "anexos_local" else None
         st.rerun()
-    st.markdown('<div class="ig2p-rodape">iG2P · Plataforma de Gestão Pública · Município de Cássia - MG</div>',
+    st.markdown('<div class="ig2p-rodape">iG2P · Inteligência em Gestão Pública · G3ST4O · Prefeitura de Cássia - MG</div>',
                 unsafe_allow_html=True)
     st.stop()
 
@@ -597,7 +597,7 @@ if _status != "aberto":
         <p style="color:{T['texto2']};margin:10px 0 0;font-size:.9rem;">{msg}</p>
         {periodo}
     </div>
-    <div class="ig2p-rodape">iG2P · Plataforma de Gestão Pública · Município de Cássia - MG</div>
+    <div class="ig2p-rodape">iG2P · Inteligência em Gestão Pública · G3ST4O · Prefeitura de Cássia - MG</div>
     """, unsafe_allow_html=True)
     st.stop()
 
@@ -750,5 +750,5 @@ if st.button("Enviar inscrição"):
                     st.session_state.enviado = True
                     st.rerun()
 
-st.markdown('<div class="ig2p-rodape">iG2P · Plataforma de Gestão Pública · Município de Cássia - MG</div>',
+st.markdown('<div class="ig2p-rodape">iG2P · Inteligência em Gestão Pública · G3ST4O · Prefeitura de Cássia - MG</div>',
             unsafe_allow_html=True)
