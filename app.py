@@ -80,7 +80,7 @@ st.set_page_config(
 
 for k, v in {"modo": "claro", "enviado": False, "protocolo": None, "destino": None,
              "motivo": None, "email_ok": None, "email_dest": None,
-             "anexos_local": False}.items():
+             "anexos_local": False, "anexos_motivo": None}.items():
     if k not in st.session_state:
         st.session_state[k] = v
 
@@ -529,10 +529,11 @@ if st.session_state.enviado:
                  f'<b>Atenção:</b> registrado apenas na planilha local, não no Google Sheets.<br>'
                  f'<b>Motivo:</b> {st.session_state.motivo}</div>')
     if st.session_state.anexos_local:
+        det = f"<br><b>Detalhe técnico:</b> {st.session_state.anexos_motivo}" if st.session_state.anexos_motivo else ""
         badge += (f'<div style="margin-top:8px;padding:10px 14px;border-radius:10px;'
                   f'background:#FFB02022;color:#B7791F;font-size:.78rem;text-align:left;">'
-                  f'<b>Atenção:</b> os anexos foram salvos apenas localmente (Drive não '
-                  f'configurado). Em produção, configure o Google Drive.</div>')
+                  f'<b>Atenção:</b> os anexos foram salvos apenas localmente, não no Google Drive.'
+                  f'{det}</div>')
     if st.session_state.email_ok is True:
         email_badge = (f'<p style="color:{T["texto2"]};font-size:.78rem;margin-top:10px;">'
                        f'📧 Um e-mail de confirmação foi enviado para '
@@ -704,6 +705,7 @@ if st.button("Enviar inscrição"):
         with st.spinner("Enviando documentos e registrando a inscrição..."):
             links = {}
             anexos_local = False
+            anexos_motivo = None
             falha_anexo = None
             for chave, rotulo in ANEXOS:
                 arq = arquivos[chave]
@@ -714,6 +716,7 @@ if st.button("Enviar inscrição"):
                     break
                 if dest == "local":
                     anexos_local = True
+                    anexos_motivo = motivo
                 links[chave] = link
 
             if falha_anexo:
@@ -744,6 +747,7 @@ if st.button("Enviar inscrição"):
                     st.session_state.email_ok = email_ok
                     st.session_state.email_dest = email.strip()
                     st.session_state.anexos_local = anexos_local
+                    st.session_state.anexos_motivo = anexos_motivo
                     st.session_state.destino = destino
                     st.session_state.motivo = motivo
                     st.session_state.protocolo = protocolo
