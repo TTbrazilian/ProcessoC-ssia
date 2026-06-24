@@ -1,0 +1,3 @@
+[server]
+# Limita o tamanho de cada upload a 10 MB (o file_uploader passa a exibir "10MB per file").
+maxUploadSize = 10
