@@ -35,12 +35,13 @@ TZ = timezone(timedelta(hours=-3))
 DATA_ABERTURA = datetime(2020, 1, 1, 0, 0, tzinfo=TZ)
 DATA_ENCERRAMENTO = None
 
-# Número inicial das inscrições. O próximo candidato recebe este número + nº de inscrições já feitas.
-PROTOCOLO_INICIAL = 1000
-
 # Anexos
 EXTS_PERMITIDAS = ["pdf", "jpg", "jpeg", "png"]
 TAMANHO_MAX_MB = 10
+
+# Numeração sequencial do protocolo (acompanha a ordem das inscrições).
+# O 1º inscrito recebe este número; os seguintes incrementam de 1 em 1.
+NUMERO_INICIAL = 1000
 
 # Definição dos 4 anexos: (chave, rótulo)
 ANEXOS = [
@@ -111,7 +112,7 @@ def aplicar_css(t):
         background:#fff; display:flex; align-items:center;
         justify-content:center; font-weight:800; font-size:20px; letter-spacing:1px;
         color:{t['primaria']}; border:2px solid rgba(255,255,255,.35);
-        overflow:hidden; padding:5px; box-sizing:border-box;
+        overflow:hidden; padding:7px; box-sizing:border-box;
     }}
     .ig2p-flag img {{ width:100%; height:100%; object-fit:contain; }}
     .ig2p-header h1 {{ font-size:1.42rem; margin:0; line-height:1.18; font-weight:800; }}
@@ -235,16 +236,9 @@ def telefone_valido(t):
     return len(so_digitos(t)) in (10, 11)
 
 
-def proximo_protocolo():
-    """Número sequencial de inscrição: PROTOCOLO_INICIAL + nº de inscrições já na planilha."""
-    try:
-        ws, _ = conectar_sheets()
-        if ws is not None:
-            n_dados = max(0, len(ws.get_all_values()) - 1)  # desconta o cabeçalho
-            return str(PROTOCOLO_INICIAL + n_dados)
-    except Exception:
-        pass
-    return str(PROTOCOLO_INICIAL)
+def uid_arquivo():
+    """Identificador único para nomear os anexos (o protocolo é definido só após gravar)."""
+    return f"{datetime.now():%Y%m%d%H%M%S}{random.randint(100, 999)}"
 
 
 def slug(texto):
@@ -481,23 +475,30 @@ def conectar_sheets():
 
 
 def salvar_google_sheets(linha):
+    """Grava a linha (com protocolo vazio em [1]), calcula o nº sequencial pela
+    posição da linha e o grava na coluna Protocolo. Retorna (ok, motivo, protocolo)."""
     ws, motivo = conectar_sheets()
     if ws is None:
-        return False, motivo
+        return False, motivo, None
     try:
         if not ws.row_values(1):
             ws.append_row(COLUNAS_PLANILHA, value_input_option="USER_ENTERED")
-        ws.append_row(linha, value_input_option="USER_ENTERED")
-        return True, None
+        resp = ws.append_row(linha, value_input_option="USER_ENTERED")
+        rng = resp.get("updates", {}).get("updatedRange", "")
+        m = re.search(r"[A-Za-z]+(\d+)", rng.split("!")[-1])
+        row = int(m.group(1)) if m else (len(ws.col_values(1)))
+        protocolo = str(NUMERO_INICIAL + (row - 2))  # linha 2 = 1º inscrito
+        ws.update_cell(row, 2, protocolo)
+        return True, None, protocolo
     except Exception as e:
-        return False, f"Falha ao gravar a linha: {type(e).__name__}: {e}"
+        return False, f"Falha ao gravar a linha: {type(e).__name__}: {e}", None
 
 
 def salvar_excel_local(linha):
     try:
         from openpyxl import Workbook, load_workbook
     except ImportError:
-        return False, "openpyxl não está instalado neste ambiente."
+        return False, "openpyxl não está instalado neste ambiente.", None
     try:
         if os.path.exists(PLANILHA_LOCAL):
             wb = load_workbook(PLANILHA_LOCAL)
@@ -509,22 +510,25 @@ def salvar_excel_local(linha):
             ws.append(COLUNAS_PLANILHA)
         ws.append(linha)
         r = ws.max_row
+        protocolo = str(NUMERO_INICIAL + (r - 2))
+        ws.cell(row=r, column=2, value=protocolo)
         for col in (2, 5, 6, 7):  # Protocolo, CPF, CRM, Telefone como texto
             ws.cell(row=r, column=col).number_format = "@"
         wb.save(PLANILHA_LOCAL)
-        return True, None
+        return True, None, protocolo
     except Exception as e:
-        return False, f"{type(e).__name__}: {e}"
+        return False, f"{type(e).__name__}: {e}", None
 
 
 def salvar_resposta(linha):
-    ok, motivo = salvar_google_sheets(linha)
+    """Retorna (destino, motivo, protocolo)."""
+    ok, motivo, protocolo = salvar_google_sheets(linha)
     if ok:
-        return "google", None
-    ok_local, _ = salvar_excel_local(linha)
+        return "google", None, protocolo
+    ok_local, _, protocolo = salvar_excel_local(linha)
     if ok_local:
-        return "local", motivo
-    return "erro", motivo
+        return "local", motivo, protocolo
+    return "erro", motivo, None
 
 
 # ----------------------------------------------------------------------------
@@ -657,13 +661,14 @@ st.markdown('<div class="ig2p-faixa">Documentos (anexos)</div>', unsafe_allow_ht
 st.markdown(f"""
 <div class="ig2p-legal">
 Anexe os documentos abaixo nos formatos <b>{', '.join(EXTS_PERMITIDAS).upper()}</b>
-(até {TAMANHO_MAX_MB} MB cada). Todos são obrigatórios.
+(até {TAMANHO_MAX_MB} MB cada). Apenas o <b>Diploma da Graduação em Medicina</b> é obrigatório; os demais são opcionais.
 </div>
 """, unsafe_allow_html=True)
 
 arquivos = {}
 for i, (chave, rotulo) in enumerate(ANEXOS, start=7):
-    arquivos[chave] = st.file_uploader(f"{i}. {rotulo} *", type=EXTS_PERMITIDAS, key=f"file_{chave}")
+    marca = " *" if chave == "diploma" else " (opcional)"
+    arquivos[chave] = st.file_uploader(f"{i}. {rotulo}{marca}", type=EXTS_PERMITIDAS, key=f"file_{chave}")
 
 # ----------------------------------------------------------------------------
 # ENVIO + VALIDAÇÃO
@@ -686,7 +691,8 @@ if st.button("Enviar inscrição"):
     for chave, rotulo in ANEXOS:
         arq = arquivos[chave]
         if arq is None:
-            erros.append(f"Anexe: {rotulo}.")
+            if chave == "diploma":  # único obrigatório
+                erros.append(f"Anexe: {rotulo}.")
         elif len(arq.getvalue()) > TAMANHO_MAX_MB * 1024 * 1024:
             erros.append(f"O arquivo '{rotulo}' excede {TAMANHO_MAX_MB} MB.")
 
@@ -697,7 +703,7 @@ if st.button("Enviar inscrição"):
             + "".join(f"<li style=\"color:{T['texto2']};\">{e}</li>" for e in erros)
             + "</ul></div>", unsafe_allow_html=True)
     else:
-        protocolo = proximo_protocolo()
+        uid = uid_arquivo()
         with st.spinner("Enviando documentos e registrando a inscrição..."):
             links = {}
             anexos_local = False
@@ -705,7 +711,10 @@ if st.button("Enviar inscrição"):
             falha_anexo = None
             for chave, rotulo in ANEXOS:
                 arq = arquivos[chave]
-                base = f"{protocolo}_{chave}_{slug(nome)}"
+                if arq is None:
+                    links[chave] = ""        # anexo opcional não enviado
+                    continue
+                base = f"{uid}_{chave}_{slug(nome)}"
                 link, dest, motivo = salvar_arquivo(arq, base)
                 if dest == "erro":
                     falha_anexo = f"{rotulo}: {motivo}"
@@ -724,13 +733,13 @@ if st.button("Enviar inscrição"):
                     f'<b>Detalhe:</b> {falha_anexo}</span></div>', unsafe_allow_html=True)
             else:
                 linha = [
-                    agora().strftime("%d/%m/%Y %H:%M:%S"), protocolo,
+                    agora().strftime("%d/%m/%Y %H:%M:%S"), "",  # protocolo definido ao gravar
                     nome.strip(), nascimento.strip(), cpf.strip(), crm.strip(),
                     telefone.strip(), email.strip(),
                     links.get("diploma", ""), links.get("pos", ""),
                     links.get("aps", ""), links.get("cassia", ""),
                 ]
-                destino, motivo = salvar_resposta(linha)
+                destino, motivo, protocolo = salvar_resposta(linha)
                 if destino == "erro":
                     st.markdown(
                         f'<div class="ig2p-card" style="border-color:{T["erro"]};">'
