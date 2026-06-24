@@ -35,6 +35,9 @@ TZ = timezone(timedelta(hours=-3))
 DATA_ABERTURA = datetime(2020, 1, 1, 0, 0, tzinfo=TZ)
 DATA_ENCERRAMENTO = None
 
+# Número inicial das inscrições. O próximo candidato recebe este número + nº de inscrições já feitas.
+PROTOCOLO_INICIAL = 1000
+
 # Anexos
 EXTS_PERMITIDAS = ["pdf", "jpg", "jpeg", "png"]
 TAMANHO_MAX_MB = 10
@@ -105,11 +108,12 @@ def aplicar_css(t):
     }}
     .ig2p-flag {{
         width:62px; height:62px; border-radius:14px; flex:0 0 auto;
-        background:rgba(255,255,255,.18); display:flex; align-items:center;
+        background:#fff; display:flex; align-items:center;
         justify-content:center; font-weight:800; font-size:20px; letter-spacing:1px;
-        border:2px solid rgba(255,255,255,.35); overflow:hidden;
+        color:{t['primaria']}; border:2px solid rgba(255,255,255,.35);
+        overflow:hidden; padding:5px; box-sizing:border-box;
     }}
-    .ig2p-flag img {{ width:100%; height:100%; object-fit:cover; }}
+    .ig2p-flag img {{ width:100%; height:100%; object-fit:contain; }}
     .ig2p-header h1 {{ font-size:1.42rem; margin:0; line-height:1.18; font-weight:800; }}
     .ig2p-header p {{ margin:4px 0 0; opacity:.92; font-size:.86rem; }}
     .ig2p-chip {{
@@ -231,8 +235,16 @@ def telefone_valido(t):
     return len(so_digitos(t)) in (10, 11)
 
 
-def gerar_protocolo():
-    return f"CAS-{datetime.now():%Y%m%d}-{random.randint(1000, 9999)}"
+def proximo_protocolo():
+    """Número sequencial de inscrição: PROTOCOLO_INICIAL + nº de inscrições já na planilha."""
+    try:
+        ws, _ = conectar_sheets()
+        if ws is not None:
+            n_dados = max(0, len(ws.get_all_values()) - 1)  # desconta o cabeçalho
+            return str(PROTOCOLO_INICIAL + n_dados)
+    except Exception:
+        pass
+    return str(PROTOCOLO_INICIAL)
 
 
 def slug(texto):
@@ -519,27 +531,12 @@ def salvar_resposta(linha):
 # Tela de sucesso
 # ----------------------------------------------------------------------------
 if st.session_state.enviado:
-    if st.session_state.destino == "google":
-        badge = (f'<div style="margin-top:14px;padding:8px 14px;border-radius:10px;'
-                 f'background:{T["ok"]}1a;color:{T["ok"]};font-size:.8rem;font-weight:600;">'
-                 f'✓ Registrado no Google Sheets</div>')
-    else:
-        badge = (f'<div style="margin-top:14px;padding:10px 14px;border-radius:10px;'
-                 f'background:#FFB02022;color:#B7791F;font-size:.78rem;text-align:left;">'
-                 f'<b>Atenção:</b> registrado apenas na planilha local, não no Google Sheets.<br>'
-                 f'<b>Motivo:</b> {st.session_state.motivo}</div>')
-    if st.session_state.anexos_local:
-        det = f"<br><b>Detalhe técnico:</b> {st.session_state.anexos_motivo}" if st.session_state.anexos_motivo else ""
-        badge += (f'<div style="margin-top:8px;padding:10px 14px;border-radius:10px;'
-                  f'background:#FFB02022;color:#B7791F;font-size:.78rem;text-align:left;">'
-                  f'<b>Atenção:</b> os anexos foram salvos apenas localmente, não no Google Drive.'
-                  f'{det}</div>')
     if st.session_state.email_ok is True:
-        email_badge = (f'<p style="color:{T["texto2"]};font-size:.78rem;margin-top:10px;">'
+        email_badge = (f'<p style="color:{T["texto2"]};font-size:.85rem;margin-top:14px;">'
                        f'📧 Um e-mail de confirmação foi enviado para '
                        f'<b>{st.session_state.email_dest}</b>.</p>')
     elif st.session_state.email_ok is False:
-        email_badge = (f'<p style="color:{T["texto2"]};font-size:.78rem;margin-top:10px;">'
+        email_badge = (f'<p style="color:{T["texto2"]};font-size:.85rem;margin-top:14px;">'
                        f'Não foi possível enviar o e-mail de confirmação agora, mas sua '
                        f'inscrição está registrada. Guarde o protocolo acima.</p>')
     else:
@@ -555,7 +552,6 @@ if st.session_state.enviado:
             omissão de dados implicará na eliminação do candidato.
         </p>
         {email_badge}
-        {badge}
     </div>
     """, unsafe_allow_html=True)
     if st.button("Nova inscrição"):
@@ -701,7 +697,7 @@ if st.button("Enviar inscrição"):
             + "".join(f"<li style=\"color:{T['texto2']};\">{e}</li>" for e in erros)
             + "</ul></div>", unsafe_allow_html=True)
     else:
-        protocolo = gerar_protocolo()
+        protocolo = proximo_protocolo()
         with st.spinner("Enviando documentos e registrando a inscrição..."):
             links = {}
             anexos_local = False
