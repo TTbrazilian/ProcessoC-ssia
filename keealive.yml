@@ -1,0 +1,21 @@
+name: Manter Streamlit Ativo - Cassia
+
+# Faz um "ping" no app em horários fixos para evitar que ele durma por inatividade.
+on:
+  schedule:
+    # Horários em UTC. UTC-3 = Brasília. Os de baixo equivalem a:
+    # 06h, 11h, 15h e 20h (horário de Brasília), espalhados ao longo do dia.
+    - cron: '0 9 * * *'
+    - cron: '0 14 * * *'
+    - cron: '0 18 * * *'
+    - cron: '0 23 * * *'
+  workflow_dispatch:   # permite rodar manualmente pela aba Actions do GitHub
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Visitar o app de Cassia
+        run: |
+          curl -s -o /dev/null -w "Status HTTP: %{http_code}\n" \
+            "https://cassiamg.streamlit.app/"
