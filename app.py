@@ -32,7 +32,7 @@ BANDEIRA_PATH = os.path.join(APP_DIR, "cássiabandeira.png")
 # ----------------------------------------------------------------------------
 TZ = timezone(timedelta(hours=-3))
 # ABERTO PARA TESTES — antes de divulgar, troque pelas datas reais (ou volte ambas para None p/ bloquear).
-DATA_ABERTURA = datetime(2020, 1, 1, 0, 0, tzinfo=TZ)
+DATA_ABERTURA = None
 DATA_ENCERRAMENTO = None
 
 # Anexos
