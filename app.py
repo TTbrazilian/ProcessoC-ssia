@@ -574,8 +574,8 @@ _status = status_inscricoes()
 if _status != "aberto":
     if _status == "antes":
         icone, titulo = "🔒", "Inscrições Encerradas"
-        msg = ("O período de inscrições está encerrado." if DATA_ABERTURA is None
-               else f"As inscrições foram encerradas no dia 28/06 às 23:59<b>{fmt_data_br(DATA_ABERTURA)}</b>.")
+        msg = ("As inscrições foram encerradas no dia 28/06 às 23:59." if DATA_ABERTURA is None
+               else f"<b>{fmt_data_br(DATA_ABERTURA)}</b>.")
     else:
         icone, titulo = "⛔", "Inscrições encerradas"
         msg = f"O período de inscrições foi encerrado em <b>{fmt_data_br(DATA_ENCERRAMENTO)}</b>."
