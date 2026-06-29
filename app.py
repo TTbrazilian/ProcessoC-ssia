@@ -32,7 +32,7 @@ BANDEIRA_PATH = os.path.join(APP_DIR, "cássiabandeira.png")
 # ----------------------------------------------------------------------------
 TZ = timezone(timedelta(hours=-3))
 # ABERTO PARA TESTES — antes de divulgar, troque pelas datas reais (ou volte ambas para None p/ bloquear).
-DATA_ABERTURA = None
+DATA_ABERTURA = datetime(2020, 1, 1, 0, 0, tzinfo=TZ)
 DATA_ENCERRAMENTO = None
 
 # Anexos
@@ -84,7 +84,7 @@ st.set_page_config(
 
 for k, v in {"modo": "claro", "enviado": False, "protocolo": None, "destino": None,
              "motivo": None, "email_ok": None, "email_dest": None,
-             "anexos_local": False, "anexos_motivo": None}.items():
+             "anexos_local": False, "anexos_motivo": None, "duplicado": False}.items():
     if k not in st.session_state:
         st.session_state[k] = v
 
@@ -474,35 +474,61 @@ def conectar_sheets():
         return None, f"{type(e).__name__}: {e}"
 
 
+def buscar_inscricao_por_cpf(cpf):
+    """Consulta (sem gravar) se o CPF já tem inscrição. Retorna o protocolo existente ou None."""
+    cpf = so_digitos(cpf)
+    if not cpf:
+        return None
+    try:
+        ws, _ = conectar_sheets()
+        if ws is not None:
+            for r in ws.get_all_values()[1:]:  # pula o cabeçalho
+                if len(r) > 4 and so_digitos(r[4]) == cpf:
+                    return r[1] if len(r) > 1 and r[1] else "—"
+    except Exception:
+        pass
+    return None
+
+
 def salvar_google_sheets(linha):
     """Grava a linha (com protocolo vazio em [1]), calcula o nº sequencial pela
     posição da linha e o grava na coluna Protocolo. Retorna (ok, motivo, protocolo)."""
     ws, motivo = conectar_sheets()
     if ws is None:
-        return False, motivo, None
+        return "erro", motivo, None
     try:
         if not ws.row_values(1):
             ws.append_row(COLUNAS_PLANILHA, value_input_option="USER_ENTERED")
+        cpf_novo = so_digitos(linha[4])  # CPF está no índice 4
+        if cpf_novo:  # rede de segurança contra duplicidade (corrida)
+            for r in ws.get_all_values()[1:]:
+                if len(r) > 4 and so_digitos(r[4]) == cpf_novo:
+                    return "duplicado", None, (r[1] if len(r) > 1 and r[1] else "—")
         resp = ws.append_row(linha, value_input_option="USER_ENTERED")
         rng = resp.get("updates", {}).get("updatedRange", "")
         m = re.search(r"[A-Za-z]+(\d+)", rng.split("!")[-1])
         row = int(m.group(1)) if m else (len(ws.col_values(1)))
         protocolo = str(NUMERO_INICIAL + (row - 2))  # linha 2 = 1º inscrito
         ws.update_cell(row, 2, protocolo)
-        return True, None, protocolo
+        return "ok", None, protocolo
     except Exception as e:
-        return False, f"Falha ao gravar a linha: {type(e).__name__}: {e}", None
+        return "erro", f"Falha ao gravar a linha: {type(e).__name__}: {e}", None
 
 
 def salvar_excel_local(linha):
     try:
         from openpyxl import Workbook, load_workbook
     except ImportError:
-        return False, "openpyxl não está instalado neste ambiente.", None
+        return "erro", "openpyxl não está instalado neste ambiente.", None
     try:
         if os.path.exists(PLANILHA_LOCAL):
             wb = load_workbook(PLANILHA_LOCAL)
             ws = wb.active
+            cpf_novo = so_digitos(linha[4])
+            if cpf_novo:
+                for row in ws.iter_rows(min_row=2, values_only=True):
+                    if row and len(row) > 4 and so_digitos(str(row[4] or "")) == cpf_novo:
+                        return "duplicado", None, str(row[1] or "—")
         else:
             wb = Workbook()
             ws = wb.active
@@ -515,19 +541,23 @@ def salvar_excel_local(linha):
         for col in (2, 5, 6, 7):  # Protocolo, CPF, CRM, Telefone como texto
             ws.cell(row=r, column=col).number_format = "@"
         wb.save(PLANILHA_LOCAL)
-        return True, None, protocolo
+        return "ok", None, protocolo
     except Exception as e:
-        return False, f"{type(e).__name__}: {e}", None
+        return "erro", f"{type(e).__name__}: {e}", None
 
 
 def salvar_resposta(linha):
-    """Retorna (destino, motivo, protocolo)."""
-    ok, motivo, protocolo = salvar_google_sheets(linha)
-    if ok:
+    """Retorna (destino, motivo, protocolo). destino: google | local | duplicado | erro."""
+    status, motivo, protocolo = salvar_google_sheets(linha)
+    if status == "ok":
         return "google", None, protocolo
-    ok_local, _, protocolo = salvar_excel_local(linha)
-    if ok_local:
-        return "local", motivo, protocolo
+    if status == "duplicado":
+        return "duplicado", None, protocolo
+    status_l, _, protocolo_l = salvar_excel_local(linha)
+    if status_l == "ok":
+        return "local", motivo, protocolo_l
+    if status_l == "duplicado":
+        return "duplicado", None, protocolo_l
     return "erro", motivo, None
 
 
@@ -535,6 +565,28 @@ def salvar_resposta(linha):
 # Tela de sucesso
 # ----------------------------------------------------------------------------
 if st.session_state.enviado:
+    if st.session_state.duplicado:
+        st.markdown(f"""
+        <div class="ig2p-success" style="border-color:{T['primaria']};">
+            <div class="check" style="background:{T['primaria']}1a;color:{T['primaria']};">ℹ️</div>
+            <h2 style="color:{T['texto']};margin:0;">Você já possui uma inscrição</h2>
+            <p style="color:{T['texto2']};margin:8px 0 0;">
+                Encontramos uma inscrição com este CPF. Não é necessário se inscrever de novo.
+                Seu número de protocolo é:</p>
+            <div class="ig2p-prot">{st.session_state.protocolo}</div>
+            <p style="color:{T['texto2']};font-size:.8rem;margin-top:14px;">
+                Se acredita que isso é um engano, entre em contato com a organização.
+            </p>
+        </div>
+        """, unsafe_allow_html=True)
+        if st.button("Voltar"):
+            for k in ("enviado", "protocolo", "duplicado", "anexos_local"):
+                st.session_state[k] = False if k in ("enviado", "duplicado", "anexos_local") else None
+            st.rerun()
+        st.markdown('<div class="ig2p-rodape">iG2P · Inteligência em Gestão Pública · G3ST4O · Prefeitura de Cássia - MG</div>',
+                    unsafe_allow_html=True)
+        st.stop()
+
     if st.session_state.email_ok is True:
         email_badge = (f'<p style="color:{T["texto2"]};font-size:.85rem;margin-top:14px;">'
                        f'📧 Um e-mail de confirmação foi enviado para '
@@ -559,8 +611,8 @@ if st.session_state.enviado:
     </div>
     """, unsafe_allow_html=True)
     if st.button("Nova inscrição"):
-        for k in ("enviado", "protocolo", "anexos_local"):
-            st.session_state[k] = False if k == "enviado" or k == "anexos_local" else None
+        for k in ("enviado", "protocolo", "anexos_local", "duplicado"):
+            st.session_state[k] = False if k in ("enviado", "anexos_local", "duplicado") else None
         st.rerun()
     st.markdown('<div class="ig2p-rodape">iG2P · Inteligência em Gestão Pública · G3ST4O · Prefeitura de Cássia - MG</div>',
                 unsafe_allow_html=True)
@@ -573,9 +625,9 @@ if st.session_state.enviado:
 _status = status_inscricoes()
 if _status != "aberto":
     if _status == "antes":
-        icone, titulo = "🔒", "Inscrições Encerradas"
-        msg = ("As inscrições foram encerradas no dia 28/06 às 23:59." if DATA_ABERTURA is None
-               else f"<b>{fmt_data_br(DATA_ABERTURA)}</b>.")
+        icone, titulo = "🔒", "Inscrições ainda não abertas"
+        msg = ("O período de inscrições será divulgado em breve." if DATA_ABERTURA is None
+               else f"As inscrições abrem em <b>{fmt_data_br(DATA_ABERTURA)}</b>.")
     else:
         icone, titulo = "⛔", "Inscrições encerradas"
         msg = f"O período de inscrições foi encerrado em <b>{fmt_data_br(DATA_ENCERRAMENTO)}</b>."
@@ -703,6 +755,15 @@ if st.button("Enviar inscrição"):
             + "".join(f"<li style=\"color:{T['texto2']};\">{e}</li>" for e in erros)
             + "</ul></div>", unsafe_allow_html=True)
     else:
+        # Anti-duplicidade: se o CPF já tem inscrição, não cria outra.
+        ja_protocolo = buscar_inscricao_por_cpf(cpf)
+        if ja_protocolo is not None:
+            st.session_state.protocolo = ja_protocolo
+            st.session_state.duplicado = True
+            st.session_state.email_ok = None
+            st.session_state.enviado = True
+            st.rerun()
+
         uid = uid_arquivo()
         with st.spinner("Enviando documentos e registrando a inscrição..."):
             links = {}
@@ -747,6 +808,12 @@ if st.button("Enviar inscrição"):
                         f'<span style="color:{T["texto2"]};font-size:.85rem;">Tente novamente em '
                         f'instantes.<br><b>Detalhe técnico:</b> {motivo}</span></div>',
                         unsafe_allow_html=True)
+                elif destino == "duplicado":
+                    st.session_state.protocolo = protocolo
+                    st.session_state.duplicado = True
+                    st.session_state.email_ok = None
+                    st.session_state.enviado = True
+                    st.rerun()
                 else:
                     email_ok, _ = enviar_email_confirmacao(email.strip(), nome.strip(), protocolo)
                     st.session_state.email_ok = email_ok
